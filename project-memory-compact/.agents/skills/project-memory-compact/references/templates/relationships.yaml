@@ -1,0 +1,39 @@
+# Relationship Definitions
+# Maps relationships between entities: foreign keys, implicit query chains, cascade policies.
+# Each relationship carries DUAL anchors (both endpoints) so impact analysis reads either side.
+# Code is the single source of truth.
+
+git_commit: "PLACEHOLDER"
+
+relationships:
+  # Every entry MUST include `anchors` (prefer both endpoints).
+
+  # --- EXAMPLES ---
+
+  # - from: User
+  #   to: Device
+  #   type: one-to-many
+  #   via: user_id (foreign key on devices.user_id → users.id)
+  #   cascade: "ON DELETE CASCADE"
+  #   description: "用户拥有多台设备，删除用户时级联删除其所有设备"
+  #   anchors:
+  #     - file: src/models/User.ts        # parent endpoint (relation declared here)
+  #       symbol: devices
+  #       line: 35
+  #       hash: 9f8a2c
+  #     - file: src/models/Device.ts      # child endpoint (FK lives here)
+  #       symbol: userId
+  #       line: 18
+  #       hash: 1c4b77
+
+  # - from: Comment
+  #   to: Post
+  #   type: implicit          # no DB-level FK; app-level reference
+  #   via: post_id (application-level reference, no DB constraint)
+  #   cascade: "manual"
+  #   description: "隐式关系 — 无数据库外键，应用层维护"
+  #   anchors:
+  #     - file: src/models/Comment.ts
+  #       symbol: postId
+  #       line: 15
+  #       hash: 5d2e8a

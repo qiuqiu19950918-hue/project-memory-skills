@@ -1,0 +1,27 @@
+# Lightweight Entity Index — derived from entities.yaml. Do NOT hand-edit field lists here.
+# Regenerate via /pmem sync or /pmem verify. Keep in sync whenever entities.yaml changes.
+# This file is the FIRST-LOAD file for the compact variant — it must stay small (routing only).
+
+git_commit: "PLACEHOLDER"
+
+index:
+  # Each entry mirrors an entity in entities.yaml, but STRIPS the `fields` list.
+  # Field details are fetched ON DEMAND via the anchor (scoped Read of anchor.lines).
+
+  # - name: User
+  #   table: users
+  #   description: "系统用户表，存储登录账户信息"
+  #   anchor:
+  #     file: src/models/User.ts
+  #     symbol: class User
+  #     lines: "12-48"
+  #     hash: 9f8a2c
+
+  # - name: Device
+  #   table: devices
+  #   description: "设备表，记录用户持有的硬件设备"
+  #   anchor:
+  #     file: src/models/Device.ts
+  #     symbol: class Device
+  #     lines: "8-34"
+  #     hash: 1c4b77
