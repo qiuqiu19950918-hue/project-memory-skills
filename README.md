@@ -1,8 +1,8 @@
-# 🧠 Project Memory — ZCode Skill 族
+# 🧠 Project Memory — AI 项目长期记忆
 
 [![Skill Type](https://img.shields.io/badge/type-project--memory-blue?style=flat-square)](#)
 [![Slash Command](https://img.shields.io/badge/command-/pmem-333?style=flat-square)](#)
-[![Platform](https://img.shields.io/badge/platform-ZCode%20%7C%20OpenCode-7c3aed?style=flat-square)](#)
+[![Platform](https://img.shields.io/badge/platform-AI%20编码工具-7c3aed?style=flat-square)](#)
 [![Repo](https://img.shields.io/badge/repo-qiuqiu19950918--hue%2Fproject--memory--skills-181717?style=flat-square&logo=github)](https://github.com/qiuqiu19950918-hue/project-memory-skills)
 
 > 让 AI 真正「记住」你的项目：自动捕获每次开发中涉及的实体关系与业务规则，形成结构化的业务映射图。后续改动时即时感知关联影响，防止遗漏关键逻辑。即使开启新对话，也能秒级还原完整的项目记忆。

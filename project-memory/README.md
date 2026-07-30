@@ -2,7 +2,6 @@
 
 [![Optimized For](https://img.shields.io/badge/optimized%20for-request%20count-2ea44f?style=flat-square)](https://github.com/qiuqiu19950918-hue/project-memory-skills)
 [![Command](https://img.shields.io/badge/command-/pmem-333?style=flat-square)](#)
-[![Compatible](https://img.shields.io/badge/ZCode-✅-0a84ff?style=flat-square)](#)
 [![Compatible](https://img.shields.io/badge/OpenCode-✅-7c3aed?style=flat-square)](#)
 
 > 让 AI 真正「记住」你的项目：自动捕获每次开发中涉及的实体关系与业务规则，形成结构化的业务映射图。后续改动时即时感知关联影响，防止遗漏关键逻辑。即使开启新对话，也能秒级还原完整的项目记忆。**以请求次数最少为优化目标**。
@@ -72,7 +71,7 @@ project-memory/.agents/
 
 ## 🔧 使用
 
-1. 安装后重启 ZCode/OpenCode
+1. 安装后重启你的 AI 编码工具
 2. 在任意项目根目录输入 `/pmem`
 3. AI 自动扫描代码，生成知识库
 4. 后续开发中 AI **自动归档**
