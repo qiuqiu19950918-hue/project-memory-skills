@@ -5,7 +5,7 @@
 [![Compatible](https://img.shields.io/badge/ZCode-✅-0a84ff?style=flat-square)](#)
 [![Compatible](https://img.shields.io/badge/OpenCode-✅-7c3aed?style=flat-square)](#)
 
-> 为 AI 提供「项目长期记忆」：维护一个版本化的结构化知识库，映射项目的实体、关系、业务规则、接口契约。**以单次上下文 token 最少为优化目标**——首轮只加载轻量索引（~1.5K token），字段定义按锚点按需读取。
+> 让 AI 真正「记住」你的项目：自动捕获每次开发中涉及的实体关系与业务规则，形成结构化的业务映射图。后续改动时即时感知关联影响，防止遗漏关键逻辑。即使开启新对话，也能秒级还原完整的项目记忆。**以单次上下文 token 最少为优化目标**。
 
 **仓库地址**：https://github.com/qiuqiu19950918-hue/project-memory-skills （本变体位于 `project-memory-compact/` 子目录）
 

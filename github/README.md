@@ -3,11 +3,13 @@
 [![Skill Type](https://img.shields.io/badge/type-project--memory-blue?style=flat-square)](#)
 [![Slash Command](https://img.shields.io/badge/command-/pmem-333?style=flat-square)](#)
 [![Platform](https://img.shields.io/badge/platform-ZCode%20%7C%20OpenCode-7c3aed?style=flat-square)](#)
-[![Repo](https://img.shields.io/badge/repo-qiuqiu19950918--hue%2Fproject--memory--skills-181717?style=flat-square&logo=github)](https://github.com/qiuqiu19950918-hue/project-memory-skills)
+[![License](https://img.shields.io/badge/license-MIT-green?style=flat-square)](./LICENSE)
 
 > 让 AI 真正「记住」你的项目：自动捕获每次开发中涉及的实体关系与业务规则，形成结构化的业务映射图。后续改动时即时感知关联影响，防止遗漏关键逻辑。即使开启新对话，也能秒级还原完整的项目记忆。
 
 **仓库地址**：https://github.com/qiuqiu19950918-hue/project-memory-skills
+
+本仓库包含**两个独立项目**，针对两种不同的 AI 模型计费模型做了相反的优化。命令都是 `/pmem`，不能同时安装。
 
 ---
 
@@ -48,7 +50,39 @@
 
 ---
 
+## 🧠 核心原理：怎么做到"不用 grep"？
+
+### 传统方式
+```
+用户："改 User 表会影响哪些模块？"
+AI：grep "User" 全项目 → 读几十个文件筛选 → 得出结论
+     ↑ 大量无效检索，token 浪费，可能漏掉隐式关系
+```
+
+### Project Memory 方式
+```
+1. 查 knowledge base 中的 relationships.yaml → User 关联 Device、Order、Role
+2. 每个关系都有 file + line 锚点 → 批量 Read 精确位置
+3. 回答影响范围。全程零全局搜索。
+```
+
+### 首轮之后（同窗口）
+```
+第1轮：/pmem 全量加载，输出 [PMEM_LOADED:V3]
+第2轮：看到标记 → 直接回答，0 次请求
+第3轮：开发了新实体 → 归档写入 → 输出 [PMEM_LOADED:V4]
+第4轮：看到 V4 标记 → 继续 0 请求
+...
+第N轮：始终 0 请求（除非外部 git pull 了别人的代码）
+```
+
+---
+
 ## 📦 安装
+
+两个变体各自为独立子目录，选择一个。
+
+### 全局安装（推荐）
 
 ```bash
 # 克隆仓库
@@ -60,6 +94,14 @@ cp -r project-memory/.agents/* ~/.agents/
 
 # 或 变体 B：token 最少（DeepSeek 等）
 cp -r project-memory-compact/.agents/* ~/.agents/
+```
+
+### 项目级安装
+
+```bash
+# 在项目根目录下
+git clone https://github.com/qiuqiu19950918-hue/project-memory-skills.git
+cp -r project-memory-skills/project-memory/.agents/* .
 ```
 
 ---
@@ -81,27 +123,38 @@ cp -r project-memory-compact/.agents/* ~/.agents/
 
 ---
 
-## 🔄 切换变体
-
-1. `rm -rf ~/.agents/skills/<旧变体名> ~/.agents/commands/pmem.md`
-2. 安装新变体
-3. 知识库文件**保持不变**——格式兼容
-
----
-
 ## 🗂 仓库目录
 
 ```
 project-memory-skills/
 ├── README.md                          # ← 你在这里
 ├── project-memory/                    # 变体 A（请求次数最少）
-│   └── .agents/
+│   ├── README.md                      #   独立说明 + 使用场景
+│   └── .agents/                       #   安装目录（cp 到 ~/.agents/）
+│       ├── commands/pmem.md
+│       └── skills/project-memory/
 ├── project-memory-compact/            # 变体 B（token 最少）
-│   └── .agents/
-└── github/                            # GitHub 发布版本（含独立 README + .gitignore）
+│   ├── README.md                      #   独立说明 + 使用场景
+│   └── .agents/                       #   安装目录
+│       ├── commands/pmem.md
+│       └── skills/project-memory-compact/
+└── LICENSE                            # MIT
 ```
 
 ---
+
+## 🔄 切换变体
+
+1. `rm -rf ~/.agents/skills/<旧变体名> ~/.agents/commands/pmem.md`
+2. 安装新变体（`cp -r <新变体>/.agents/* ~/.agents/`）
+3. 知识库（`.zcode_skills_temp/.aiknowledge/`）**保持不变**
+4. 若切到 compact 变体：执行 `/pmem sync` 生成 `INDEX.yaml`
+
+---
+
+## 🤝 贡献
+
+欢迎提 PR 改进状态机逻辑、锚点策略、模板质量或指令清晰度。两个变体的知识库文件格式完全兼容，请在修改时保持一致。
 
 ## 📄 License
 
