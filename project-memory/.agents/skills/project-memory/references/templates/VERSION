@@ -1,24 +1,6 @@
-# VERSION — Project Memory Load State
-# ⭐ This file is the load state persisted to disk. It is loaded FIRST on every
-# first-turn activation. It drives the Load State Machine.
-# Format is identical across project-memory and project-memory-compact variants
-# so the knowledge base stays compatible when switching variants.
-
-# Monotonically increasing version. Bump on EVERY archive write (V1 → V2 → ...).
-# This number is echoed in the in-context marker [PMEM_LOADED:Vx].
-loaded_version: 1
-
-# Current code version when last synced. Use git HEAD short hash,
-# or "no-git" if the project is not under git.
-code_fingerprint: "no-git"
-
-# ISO 8601 timestamp of the last sync/verify/write.
-last_sync: "2026-07-29T00:00:00Z"
-
-# Recent change summaries (max 10, drop oldest).
-# In continuation mode, when an external change is signaled, read ONLY this list
-# to decide which entries to re-examine — instead of reloading everything.
-recent_changes:
-  # - "V1: 初始化知识库，录入 30 个实体、45 条关系"
-  # - "V2: 新增 ReModelTrainDevicePart 实体 @ ReModelTrainDevicePart.java:28-69"
-  # - "V3: 修改 WsWorkOrder.repairPartIds 标注为冷备份字段 @ WsWorkOrder.java:153"
+loaded_version=1
+schema_version=2.0
+last_sync=PLACEHOLDER
+# loaded_version：数据版本，每次归档 bump +1
+# schema_version：知识图谱结构版本，当前 2.0（图模型改造版）
+# last_sync：最后归档时间戳 ISO8601

@@ -1,0 +1,113 @@
+{
+  "_meta_doc": "Project Memory 知识图谱模板。生产文件中删除所有 _comment/_xxx_doc 字段。schema_version=2.0。",
+  "meta": {
+    "loaded_version": 1,
+    "schema_version": "2.0",
+    "code_fingerprint": "no-git",
+    "_code_fingerprint_doc": "本 skill 的 hook 完全不碰 git。此字段保留占位'no-git'或最后归档时间戳，不存 commit hash",
+    "last_sync": "PLACEHOLDER",
+    "node_count": 0,
+    "edge_count": 0,
+    "rule_count": 0,
+    "contract_count": 0,
+    "recent_changes": []
+  },
+  "nodes": [
+    {
+      "_comment": "示例实体节点 —— 复制此块并修改。生产文件删除 _comment",
+      "id": "entity:WsWorkOrder",
+      "type": "table",
+      "name": "WsWorkOrder",
+      "summary": "工单表，记录维修工单基本信息",
+      "tags": ["工单域", "核心表"],
+      "layer": "data",
+      "anchor": {
+        "file": "src/models/WsWorkOrder.java",
+        "symbol": "class WsWorkOrder",
+        "lines": "12-80",
+        "hash": "PLACEHOLDER"
+      },
+      "fields": [
+        { "name": "id", "type": "varchar(64)", "primary": true },
+        { "name": "code", "type": "varchar(64)", "unique": true },
+        { "name": "repairPartIds", "type": "varchar(2000)", "comment": "逗号拼接的被试件id集合（冗余镜像字段，见 edges 的 redundant_mirror 和 rules 的 sync 规则）" },
+        { "name": "status", "type": "varchar(32)" }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "_comment": "示例标准关系 —— 一对多外键",
+      "source": "entity:WsWorkOrder",
+      "target": "entity:WsWorkOrderRepairPart",
+      "type": "one_to_many",
+      "via": "workOrderId (ws_work_order_repair_part.work_order_id → ws_work_order.id)",
+      "cascade": "cascade_delete",
+      "role": "primary_source",
+      "weight": 0.8,
+      "description": "一个工单包含多个被试件关联记录（中间表）"
+    },
+    {
+      "_comment": "示例冗余镜像边 —— 逗号拼接字段镜像某主关系，必须配合 rules 里的 sync 规则",
+      "source": "entity:WsWorkOrder",
+      "target": "entity:ReRepairPart",
+      "type": "redundant_mirror",
+      "via": "repairPartIds (逗号拼接字符串)",
+      "role": "denormalized_snapshot",
+      "mirrors": "entity:WsWorkOrder→entity:WsWorkOrderRepairPart→entity:ReRepairPart",
+      "weight": 0.3,
+      "description": "⚠️ 冷备份字段 —— repairPartIds 是中间表 WsWorkOrderRepairPart 的冗余快照。改中间表时必须同步重拼此字段"
+    }
+  ],
+  "rules": [
+    {
+      "_comment": "示例同步约束规则 —— 冗余字段的强制同步逻辑",
+      "id": "rule:sync_repair_part_ids",
+      "summary": "修改工单-被试件关联时必须同步重拼 repairPartIds 冗余字段",
+      "trigger": {
+        "edge": "entity:WsWorkOrder→entity:WsWorkOrderRepairPart",
+        "operations": ["insert", "delete", "update"]
+      },
+      "must_also_update": [
+        {
+          "entity": "entity:WsWorkOrder",
+          "field": "repairPartIds",
+          "action": "重新拼接所有关联被试件 id 为逗号字符串"
+        }
+      ],
+      "constraints": [
+        "校验被试件状态符合要求（如已校准/在有效期内），不符合的从中间表移除并重拼"
+      ],
+      "reason": "repairPartIds 是中间表的冷备份快照，不同步会导致数据不一致",
+      "anchor": {
+        "file": "src/services/WsWorkOrderService.java",
+        "symbol": "updateRepairParts",
+        "lines": "120-145",
+        "hash": "PLACEHOLDER"
+      }
+    }
+  ],
+  "contracts": [
+    {
+      "_comment": "示例 API 契约 —— 嵌套子资源格式",
+      "id": "contract:get_workorder_parts",
+      "path": "GET /api/workorders/:id/parts",
+      "format": "nested",
+      "summary": "被试件数据嵌套在 parts 数组中（标准列表返回平铺格式，此处为嵌套子资源）",
+      "special_handling": [
+        "前端需对 parts 数组二次解析",
+        "status 字段含中文，国际化需映射"
+      ],
+      "anchor": {
+        "file": "src/controllers/WsWorkOrderController.java",
+        "symbol": "getWorkOrderWithParts",
+        "lines": "60-85",
+        "hash": "PLACEHOLDER"
+      }
+    }
+  ],
+  "fingerprints": {
+    "_comment": "每个 anchor.file 的内容指纹，用于增量更新。key = file path, value = { contentHash, structKeys, lastScan }。详细结构见 fingerprints.json",
+    "src/models/WsWorkOrder.java": { "contentHash": "PLACEHOLDER", "structKeys": {}, "lastScan": "PLACEHOLDER" }
+  }
+}

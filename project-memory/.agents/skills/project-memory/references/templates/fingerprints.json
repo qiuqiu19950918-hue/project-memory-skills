@@ -1,0 +1,16 @@
+{
+  "_doc": "文件指纹库。由 hooks/fingerprint.mjs 自动维护。用于增量更新判定（NONE/COSMETIC/STRUCTURAL）。",
+  "_doc_struct": "key = 项目相对文件路径; value = { contentHash: SHA-256, structKeys: { classes/fields/methods/imports 名单 }, lastScan: ISO8601 }",
+  "_doc_classification": "NONE=contentHash相同跳过; COSMETIC=hash变但structKeys一致跳过; STRUCTURAL=structKeys变化→标记待归档",
+  "_doc_note": "生产文件中删除所有 _doc/_xxx 字段。首次 /pmem migrate 或 /pmem sync 时自动生成实际指纹。",
+  "src/models/Example.java": {
+    "contentHash": "9f8a2c3d4e5f",
+    "structKeys": {
+      "classes": ["Example"],
+      "fields": ["id", "name"],
+      "methods": ["findById", "create"],
+      "imports": ["java.util.List"]
+    },
+    "lastScan": "2026-08-03T00:00:00Z"
+  }
+}

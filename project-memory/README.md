@@ -1,90 +1,55 @@
-# 🧠 Project Memory — Request-Count Variant
+# Project Memory · Skill 说明（v2.0 知识图谱版）
 
-[![Optimized For](https://img.shields.io/badge/optimized%20for-request%20count-2ea44f?style=flat-square)](https://github.com/qiuqiu19950918-hue/project-memory-skills)
-[![Command](https://img.shields.io/badge/command-/pmem-333?style=flat-square)](#)
-[![Compatible](https://img.shields.io/badge/OpenCode-✅-7c3aed?style=flat-square)](#)
+这是 Project Memory 的 skill 本体目录。本版本（v2.0）相对 v1 做了架构级重写。
 
-> 让 AI 真正「记住」你的项目：自动捕获每次开发中涉及的实体关系与业务规则，形成结构化的业务映射图。后续改动时即时感知关联影响，防止遗漏关键逻辑。即使开启新对话，也能秒级还原完整的项目记忆。**以请求次数最少为优化目标**。
+## 📢 本版本改进点速览
 
-**仓库地址**：https://github.com/qiuqiu19950918-hue/project-memory-skills （本变体位于 `project-memory/` 子目录）
+| 改进 | 针对 | 优化 |
+|---|---|---|
+| 单一 knowledge-graph.json | v1 的 5 个分散 YAML 文件 | 统一 ID，支持图遍历 |
+| 1-hop 邻居扩展检索 | v1 的字符串匹配 | 发现传递关系 + 规则联动 |
+| redundant_mirror 机制 | v1 无专项处理 | 自动识别冗余字段并提醒同步 |
+| hook 自动归档 | v1 靠 AI 自觉 | PostToolUse+Stop 强制，不漏归档 |
+| 指纹增量更新 | v1 全量重扫 | NONE/COSMETIC/STRUCTURAL 三级跳过 |
+| 别名容错 | v1 遇错即废 | normalize before write |
+| 单一变体 | v1 双变体维护 | 废弃 compact，合并 |
 
----
+详见根目录 README 的"本版本改进"章节。
 
-## 🎯 适用场景
+## 安装
 
-| 你用的模型 / 套餐 | 该选哪个变体 |
-|:---|:---|
-| **GLM-5.2 / 按请求次数计费** | ✅ **这个**（请求次数最少） |
-| 上下文窗口很大（≥ 128K），不敏感 | ✅ **这个** |
-| 需要多轮追问同一个项目的多个问题 | ✅ **这个** |
+将本目录（`project-memory/`）整体复制到：
+- 用户级：`~/.agents/skills/project-memory/`
+- 项目级：`<项目>/.agents/skills/project-memory/`
 
-> 如果你用的模型按 **输入/输出 token** 计费（如 DeepSeek），请换 [project-memory-compact](../project-memory-compact)。
+命令文件 `.agents/commands/pmem.md` 复制到 `~/.agents/commands/pmem.md`。
 
----
-
-## ⚡ 请求次数明细
-
-| 场景 | 请求次数 | 说明 |
-|:---|:---:|:---|
-| **新窗口首轮** | ~1 | `cat` 一条命令加载全部 5 个知识库文件 |
-| **同窗口续轮** | **0** | `[PMEM_LOADED:Vx]` 标记驱动——上下文已全量加载，不重读 |
-| 用户说"我 git pull 了" | 1 | 只读 `VERSION` 检测增量 |
-| 自己写归档后继续 | **0** | 自己写入的内容上下文已知，不重读 |
-| 回答"改 X 会影响什么" | **0** | 关系数据已在上下文中 |
-
----
-
-## 📦 安装
-
-```bash
-# 克隆仓库（本变体是 monorepo 的一部分）
-git clone https://github.com/qiuqiu19950918-hue/project-memory-skills.git
-cd project-memory-skills
-
-# 全局安装
-cp -r project-memory/.agents/* ~/.agents/
-
-# 或项目级安装
-cp -r project-memory/.agents/* /path/to/your-project/
-```
-
-> ⚠️ 与 project-memory-compact **不能同时安装**（命令同名、目录冲突）。
-
----
-
-## 🧩 目录结构
+## 首次使用
 
 ```
-project-memory/.agents/
-├── commands/
-│   └── pmem.md                    # /pmem 命令入口
-└── skills/
-    └── project-memory/
-        ├── SKILL.md               # 主技能指令（Load State Machine + cat 合并 + 被动检测）
-        └── references/
-            ├── retrieval-protocol.md
-            ├── update-checklist.md
-            └── templates/  (VERSION + entities.yaml + relationships.yaml + ...)
+/pmem init
 ```
+在用户项目创建 `.zcode_skills_temp/.aiknowledge/` 并引导安装 hook。
 
----
+## 关键约束
 
-## 🔧 使用
+- **hook 完全不碰 git**：跨版本控制同步靠手动 `/pmem sync`
+- **零外部依赖**：hook 脚本仅用 Node.js 内置模块（crypto/fs/path）
+- **单一变体**：本目录是唯一变体，已合并旧 compact 版（v1 用户迁移后功能等价）
 
-1. 安装后重启你的 AI 编码工具
-2. 在任意项目根目录输入 `/pmem`
-3. AI 自动扫描代码，生成知识库
-4. 后续开发中 AI **自动归档**
+## 文件清单
 
-| 命令 | 作用 | 请求次数 |
-|:---|:---|:---:|
-| `/pmem` | 加载知识库 | ~1（首轮）/ 0（续轮） |
-| `/pmem check` | 检查是否过期 | 1 |
-| `/pmem sync` | 全量重建 | varies |
-| `/pmem verify` | 增量修复 | varies |
+- `SKILL.md` — 核心，AI 首先读这个
+- `references/graph-protocol.md` — 图模型规范（节点/边/规则/契约/别名表/redundant_mirror）
+- `references/retrieval-protocol.md` — 1-hop 检索算法
+- `references/update-checklist.md` — 归档检查清单
+- `references/templates/` — 各类模板（knowledge-graph.json/fingerprints.json/VERSION/hooks 配置）
+- `hooks/` — 自动归档脚本（v2.0 新增：fingerprint/post-tool-archive/stop-archive/session-load）
+- `commands/pmem.md` — /pmem 命令定义（8 个子命令）
 
----
+## 从 v1 迁移
 
-## 📄 License
-
-MIT
+```
+/pmem migrate
+```
+自动转换旧 YAML 知识库到 knowledge-graph.json，旧文件备份到 `legacy/`。

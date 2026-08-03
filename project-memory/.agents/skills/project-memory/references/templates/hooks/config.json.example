@@ -1,0 +1,84 @@
+{
+  "_doc": "Project Memory hook 配置示例。复制到你的项目后删除所有 _doc 字段。",
+  "_doc_two_modes": "方式A（配置文件）: 把 events 部分合并到 <项目>/.zcode/config.json 顶层 hooks 字段，必须加 \"enabled\":true。方式B（插件）: 把 hooks.json 放插件目录，外层用 hooks.<Event>（无 events 这层）。",
+  "_doc_no_git": "所有 hook 完全不碰 git。跨版本控制同步请手动执行 /pmem sync。",
+
+  "方式A_配置文件": {
+    "hooks": {
+      "enabled": true,
+      "events": {
+        "PostToolUse": [
+          {
+            "matcher": "Write|Edit",
+            "hooks": [
+              {
+                "type": "command",
+                "command": "node \"${ZCODE_PROJECT_DIR}/.zcode_skills_temp/.aiknowledge/hooks/post-tool-archive.mjs\"",
+                "timeout": 10
+              }
+            ]
+          }
+        ],
+        "Stop": [
+          {
+            "hooks": [
+              {
+                "type": "command",
+                "command": "node \"${ZCODE_PROJECT_DIR}/.zcode_skills_temp/.aiknowledge/hooks/stop-archive.mjs\"",
+                "timeout": 10
+              }
+            ]
+          }
+        ],
+        "SessionStart": [
+          {
+            "hooks": [
+              {
+                "type": "command",
+                "command": "node \"${ZCODE_PROJECT_DIR}/.zcode_skills_temp/.aiknowledge/hooks/session-load.mjs\""
+              }
+            ]
+          }
+        ]
+      }
+    }
+  },
+
+  "方式B_插件hooks.json": {
+    "hooks": {
+      "PostToolUse": [
+        {
+          "matcher": "Write|Edit",
+          "hooks": [
+            {
+              "type": "command",
+              "command": "node \"${ZCODE_PLUGIN_ROOT}/hooks/post-tool-archive.mjs\"",
+              "timeout": 10
+            }
+          ]
+        }
+      ],
+      "Stop": [
+        {
+          "hooks": [
+            {
+              "type": "command",
+              "command": "node \"${ZCODE_PLUGIN_ROOT}/hooks/stop-archive.mjs\"",
+              "timeout": 10
+            }
+          ]
+        }
+      ],
+      "SessionStart": [
+        {
+          "hooks": [
+            {
+              "type": "command",
+              "command": "node \"${ZCODE_PLUGIN_ROOT}/hooks/session-load.mjs\""
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

@@ -1,254 +1,198 @@
 ---
 name: project-memory
-description: "Use when user invokes /pmem, asks about cross-module impact of a code change, or when development work involves new entities/tables, new foreign key or implicit relationships, special business rules, non-standard API response formats, or cross-module implicit dependencies. Maintains a versioned structured knowledge base at .zcode_skills_temp/.aiknowledge/ mapping code entities, relationships, business rules, and API contracts — each entry carries a precise file+line anchor. Optimized for MINIMUM REQUEST COUNT: full first-load then zero re-loads within the same window via an in-context version marker. Code is the single source of truth."
+description: 项目代码知识图谱记忆系统。将实体/关系/规则/API契约存储为单一 JSON 知识图谱，支持 1-hop 影响分析、冗余镜像（redundant_mirror）检测、hook 驱动的自动归档。使用 /pmem 命令管理。
 ---
 
-# Project Memory — AI 的项目长期记忆（请求次数最少变体）
+# Project Memory · 代码知识图谱
 
-Maintain a structured, versioned knowledge base that gives AI a long-term map of a project's data model, relationships, business rules, and API contracts.
+> 把项目里的表、字段、关系、业务规则、API 契约固化为单一 JSON 知识图谱，让 AI 在后续会话中"记得"项目结构，避免反复重新理解。
 
-## This Variant — Minimum Request Count
+## 0. 何时触发本 Skill
 
-This is the **request-count-minimal** variant. It assumes the billing unit is **per request**, and context size per request is not the bottleneck (e.g. 1M-token-window models billed per request).
+**自动匹配场景**（无需用户显式调用）：
+- 用户询问"改 X 会影响谁" / "X 和 Y 是什么关系" / "这个字段干嘛的"
+- 用户要新增表/字段/接口/业务规则，需要确认现有结构
+- 用户提到"工单"、"被试件"、"中间表"、"冗余字段"等领域术语，需要查阅图谱
 
-**How it minimizes requests:**
-- First turn of a new window: full load (necessary, to build complete project understanding).
-- **All subsequent turns in the SAME window: ZERO reload.** Context is cumulative — what was loaded stays loaded. Never re-Read knowledge files just because a new turn started.
-- External changes (git pull) detected only passively (when the user signals an update).
+**显式调用**：用户输入 `/pmem <子命令>`（见 commands/pmem.md）。
 
-## Core Principle
+## 1. 知识库结构
 
-**Code is the single source of truth. The knowledge base is a CACHE of the code's structure.** Updates overwrite, never append. Stale data is flagged, not trusted.
-
-## Knowledge Base Layout
-
-All files live under the project root at `.zcode_skills_temp/.aiknowledge/`:
+数据目录（用户项目内）：`.zcode_skills_temp/.aiknowledge/`
 
 ```
-.zcode_skills_temp/.aiknowledge/
-├── VERSION                # ⭐ version fingerprint + recent change list (loaded first)
-├── entities.yaml          # Entity definitions (tables, fields, primary keys) + anchors
-├── relationships.yaml     # Relationships (FK, implicit chains, cascade) + dual anchors
-├── business-rules.md      # Special business rules + anchors
-├── api-contracts.md       # API response formats + anchors
-├── sources.yaml           # Entry files and scan paths (optional)
-└── temp/                  # Temporary working files (gitignored)
-    └── drafts/            # Draft rules awaiting user confirmation
+.aiknowledge/
+├── knowledge-graph.json    # ⭐ 统一图模型（nodes/edges/rules/contracts/fingerprints）
+├── VERSION                 # 版本指纹（loaded_version / schema_version）
+├── fingerprints.json       # 文件指纹库（增量更新用）
+├── pending-archive.json    # hook 待归档标记（gitignored，自动管理）
+└── legacy/                 # 旧 YAML 迁移备份
 ```
 
-Every knowledge entry carries an **anchor** (file + line + symbol + hash).
+**单一 JSON 承载全部**：实体、关系、规则、契约、指纹都在 `knowledge-graph.json` 一个文件里。不再使用分散的 YAML/MD 文件。
 
-## ⭐ The Load State Machine (most important section)
+## 2. 图模型速览
 
-Before ANY knowledge-base interaction, run this state check. **It costs zero requests** — it only inspects the current conversation context.
+详细规范见 `references/graph-protocol.md`。核心结构：
 
-### Step 1 — Check for the loaded marker
+- **nodes[]**：实体节点（id=`entity:<Name>`，含 type/name/summary/tags/layer/anchor/fields）
+- **edges[]**：关系边（source/target id + type/via/cascade/weight）
+- **rules[]**：业务规则与同步约束（trigger.edge + must_also_update）
+- **contracts[]**：API 契约（path/format/special_handling）
+- **fingerprints{}**：文件指纹（contentHash + structKeys）
 
-Scan the conversation context for a marker line of the form:
+### 边类型（重点关注 redundant_mirror）
+
+| 类别 | type | weight | 场景 |
+|---|---|---|---|
+| 标准关系 | `one_to_many` 等 | 0.8 | 外键关系 |
+| 隐式 | `implicit` | 0.5 | 应用层维护无DB外键 |
+| **冗余镜像** | **`redundant_mirror`** | **0.3** | **逗号拼接字段镜像主关系，必须配 sync 规则** |
+| 级联 | `cascade_delete` | 0.9 | 删父级自动删子级 |
+
+## 3. Load State Machine（加载状态机）
+
+控制知识图谱的加载时机，避免每轮重复 cat：
+
 ```
-[PMEM_LOADED:Vx]
-```
+首轮（上下文无 [PMEM_LOADED:Vx] 标记）:
+  → cat .zcode_skills_temp/.aiknowledge/knowledge-graph.json（1 次请求，全图加载）
+  → 输出状态摘要 + [PMEM_LOADED:Vx] 标记（x = meta.loaded_version）
 
-### Step 2 — Branch by state
-
-```
-No [PMEM_LOADED:Vx] marker found
-  → FIRST-TURN MODE (see below)
-  → full load, then emit marker at end of turn
-
-[PMEM_LOADED:Vx] marker found
-  → CONTINUATION MODE (see below)
-  → zero reload by default
-```
-
-### FIRST-TURN MODE (new window / first load)
-
-Goal: build complete project understanding in the fewest requests.
-
-1. **One Bash call** to load ALL knowledge files at once (this is the request-count killer move):
-   ```bash
-   cat .zcode_skills_temp/.aiknowledge/VERSION \
-       .zcode_skills_temp/.aiknowledge/entities.yaml \
-       .zcode_skills_temp/.aiknowledge/relationships.yaml \
-       .zcode_skills_temp/.aiknowledge/business-rules.md \
-       .zcode_skills_temp/.aiknowledge/api-contracts.md \
-       .zcode_skills_temp/.aiknowledge/sources.yaml
-   ```
-   - If VERSION is missing or `.aiknowledge/` doesn't exist → this is a new project: read `references/templates/` and initialize from current code (see `/pmem sync` flow), then create VERSION.
-   - This single `cat` replaces 5 separate Read calls → **5 requests collapse to 1**.
-2. **One Bash call** to get the code version (if git available):
-   ```bash
-   git rev-parse --short HEAD 2>/dev/null || echo "no-git"
-   ```
-   (Can be combined with the cat above using `;` to stay at 1 request total.)
-3. Compare VERSION's `code_fingerprint` with HEAD. If mismatch → note "possibly stale" in the summary.
-4. Display the status summary (format below).
-5. **Emit the marker** at the end of the turn inside the mandatory archiving block (see Forced Archiving).
-
-### CONTINUATION MODE (same window, later turns)
-
-**Default action: do NOTHING. Zero requests.** The context already holds the full knowledge base from the first turn.
-
-Reasoning: context is cumulative. Re-reading would only duplicate content already present — pure waste.
-
-**The ONLY three triggers that break zero-reload:**
-
-| Trigger | What to do | Cost |
-|---------|-----------|------|
-| User explicitly signals external change ("I pulled", "更新了", "sync 了别人的代码") | Read ONLY `VERSION` (1 request). If `loaded_version` matches the context's marker → still in sync, do nothing more. If different → read `VERSION.recent_changes` listed blocks only. | 1 request |
-| User invokes `/pmem sync` or `/pmem verify` (explicit rebuild) | Run that command's full flow. | per command |
-| User invokes `/pmem check` | Read `VERSION` + current HEAD, report staleness. | 1 request |
-
-**Critical rule — self-written archives are NEVER re-read:**
-If the archive changes in this window were produced by YOU (the AI wrote them in an earlier turn), those changes are ALREADY in context. Do NOT re-read. Just update the marker's version number and continue.
-
-## The Anchor
-
-Every knowledge entry MUST carry an anchor — a precise physical coordinate into the code:
-
-```yaml
-anchor:
-  file: src/models/User.ts
-  symbol: class User
-  lines: "12-48"
-  hash: 9f8a2c
+续轮（已有 [PMEM_LOADED:Vx] 标记）:
+  → 默认 0 请求，图已在上下文
+  → 触发重读的情况：
+      - 自己刚归档了变更 → 图已更新在上下文，bump 标记为 [PMEM_LOADED:Vx+1]
+      - pending-archive.json 存在 → hook 拽回续做，按归档流程处理
+      - 用户执行 /pmem sync/check/verify → 按命令流程
 ```
 
-Anchors make retrieval target specific files instead of broad search. For the detailed retrieval ladder (direct read → scoped grep fallback → self-heal), read `references/retrieval-protocol.md`.
+### 状态标记格式
+每轮回复结尾必须输出加载标记：
+- 已加载且无变更：`[PMEM_LOADED:V3]`
+- 本轮归档了变更：`[PMEM_LOADED:V4]`（bump 后的版本）
 
-## Retrieval & Impact Analysis
+## 4. HARD-GATE（强制归档兜底）
 
-**Retrieval** (answer a question about entity X):
-1. Answer directly from the in-context knowledge base if possible — **zero requests**.
-2. Only if you must confirm against current source: Read `anchor.file` at `anchor.lines`.
+**这是双保险中的"软约束"**。hook 是主防线，但 hook 可能未启用或异常，故保留此提示词约束：
 
-**Impact analysis** ("what does changing X affect?"):
-1. From the in-context `relationships.yaml`, find entries where `from == X` or `to == X`.
-2. Answer directly — **zero requests** in continuation mode.
-3. Deep verification only if the user needs source-level proof.
-
-## Update Criteria
-
-### ✅ MUST Record (mandatory, no exceptions) — each WITH an anchor
-
-| # | Trigger | File |
-|---|---------|------|
-| 1 | Entity/table change (new table with relations, modified FK/constraints) | `entities.yaml` |
-| 2 | New/changed relationship (FK, many-to-many, implicit chain, cascade change) | `relationships.yaml` |
-| 3 | Special business rule (mutual exclusion, state machine, pre-deletion check) | `business-rules.md` |
-| 4 | API format divergence (nested sub-resources, flattened cross-table, non-standard params) | `api-contracts.md` |
-| 5 | Cross-module implicit dependency | `relationships.yaml` |
-
-### ❌ Do NOT Record
-
-- Standard single-table CRUD pages/APIs.
-- Pure UI adjustments.
-- Simple field additions with no relationship/impact.
-
-See `references/update-checklist.md` for per-scenario guidance.
-
-## Commands
-
-### `/pmem`
-Run the Load State Machine. First turn → full load. Continuation → zero reload. Always end by (re)emitting the marker.
-
-### `/pmem check`
-Read `VERSION` + current HEAD (1 request). Report staleness. Read-only.
-
-### `/pmem sync`
-Force full rebuild from current code:
-1. Scan model/entity/ORM/migration files.
-2. Extract entities + relationships + business rules + non-standard APIs.
-3. Write to files WITH fresh anchors for every entry.
-4. **Bump `loaded_version` in VERSION**, set `code_fingerprint` to HEAD, append changes to `recent_changes`.
-5. Display updated status summary.
-6. Emit new marker `[PMEM_LOADED:Vx+1]`.
-
-⚠️ `sync` overwrites — including drafts in `temp/drafts/`. Use `verify` to preserve drafts.
-
-### `/pmem verify`
-Incremental repair (safe default for migrating old knowledge bases):
-1. Walk every entry.
-2. Missing anchor or hash mismatch → locate in code, add/refresh anchor (self-heal).
-3. Not found in code → flag for review (don't auto-delete).
-4. **Bump `loaded_version` if any anchor was added/healed.**
-5. Output diff. Drafts preserved.
-
-## Update Mechanism
-
-When updating knowledge files:
-1. Read the current file first (Read before Edit/Write).
-2. Precisely replace the target entry — overwrite, never append history.
-3. Always write/update the `anchor` (file/line/symbol/hash).
-4. **Update `VERSION`**: bump `loaded_version`, append a one-line summary to `recent_changes` (keep max 10, drop oldest).
-5. Clean up confirmed `temp/drafts/` entries.
-
-## Forced Archiving + Marker (mandatory every turn)
-
+```
 <HARD-GATE>
-After EVERY turn that touches code or the knowledge base, you MUST output BOTH:
-1. The knowledge base update summary (even if "no change").
-2. The load marker `[PMEM_LOADED:Vx]` reflecting the CURRENT knowledge-base version.
+每次涉及代码变更的任务结束后，必须判断是否触发归档条件：
 
-The marker is the load state — without it, the next turn cannot tell it is in continuation mode and will wastefully reload. NEVER omit it.
+【触发归档的条件】（满足任一即触发）：
+- 新增/删除/重命名实体（表、类、接口）
+- 新增/删除/修改字段（尤其外键字段、ref 引用）
+- 新增/删除/修改关系（edges）
+- 新增/删除/修改业务规则（rules）
+- 发现冗余字段（疑似 redundant_mirror）
+- 新增/修改 API 契约（非标准 CRUD 格式）
+
+【不触发归档的情况】：
+- 纯 CRUD 业务逻辑（增删改查实现）
+- 纯 UI/CSS/样式改动
+- 方法体内部逻辑调整（未改签名/字段）
+- 注释/文档更新
+
+【若触发】：
+1. 读取变更涉及的文件
+2. 按 update-checklist.md 流程提取结构
+3. 执行"别名归一"（见 graph-protocol.md 第 7 节）后再写入 knowledge-graph.json
+4. 检测 redundant_mirror：发现逗号拼接字段（字段名含 Ids/List/集合 且为 String 类型）→ 提示用户确认是否冗余镜像
+5. bump meta.loaded_version +1，追加 recent_changes
+6. 更新 fingerprints.json（为新/改文件算指纹）
+7. 输出归档摘要 + [PMEM_LOADED:Vx+1] 标记
+
+【若未触发】：输出"无结构变更" + [PMEM_LOADED:Vx] 标记
 </HARD-GATE>
-
-**Format (with changes):**
-```
-## 📚 知识库更新
-- [实体] 新增/修改/删除 XXX（表名）@ file:line
-- [关系] 新增/修改/删除 A → B（类型，级联）@ file:line
-- [业务规则] 新增/修改/删除：描述 @ file:line
-- [接口契约] 新增/修改/删除：路径/格式 @ file:line
-- [待确认] 草稿已保存至 temp/drafts/xxx
-
-[PMEM_LOADED:Vx]
 ```
 
-**Format (no changes):**
-```
-## 📚 知识库更新
-无（本次变更不涉及跨表关系、业务规则或特殊接口格式）
+## 5. 自动归档机制（hook 驱动）
 
-[PMEM_LOADED:Vx]
-```
+**这是双保险中的"硬约束"**。三个 hook 脚本（位于 skill 的 `hooks/` 目录，需安装到用户项目）：
 
-**When this turn bumped the version** (you wrote/updated archive entries), use `Vx+1` and that becomes the new current version. When no version bump, reuse the same `Vx` from context.
+### 5.1 SessionStart hook（session-load.mjs）
+会话启动时检测知识图谱是否存在 → 注入"请加载图谱"提示。AI 首轮自动 cat 加载。
 
-## Multi-Machine Collaboration
+### 5.2 PostToolUse hook（post-tool-archive.mjs）
+监听 `Write|Edit` 工具。每次写代码文件后：
+1. 计算改动文件的指纹（SHA-256 + 正则提取结构签名）
+2. 对比 `fingerprints.json`：
+   - `NONE`（hash 同）→ 跳过
+   - `COSMETIC`（hash 变但结构签名同）→ 跳过（仅内部逻辑变）
+   - `STRUCTURAL`（结构签名变）→ 写入 `pending-archive.json` 标记待归档
 
-Knowledge files + VERSION are committed alongside code. `VERSION.loaded_version` + `code_fingerprint` enable precise staleness detection when pulling others' work — only the changed entries need re-examination, not the whole base.
+### 5.3 Stop hook（stop-archive.mjs）
+AI 准备结束回复时：
+1. 读 `pending-archive.json`
+2. 非空 → 输出 `decision:block` 请求 continuation，拽回 AI 继续归档
+3. 归档完成（AI 清除 pending-archive.json）后才真正结束
+4. 防 3 次以上无限循环
 
-## Status Summary Format
+### 5.4 hook 不碰 git（重要边界）
+**所有 hook 完全不调用任何 git 命令**（连只读的 git rev-parse 都不碰）。
+- 本地开发任务后自动归档：✅ 由 hook 处理
+- 跨版本控制同步（pull/commit/push）：❌ 由用户手动 `/pmem sync` 处理
 
-```
-📚 项目知识库已加载 [PMEM_LOADED:Vx]
-- 实体：N 个
-- 关系：N 条
-- 业务规则：N 条
-- 接口约定：N 条
-- 基于代码版本：<fingerprint>（<HEAD 或 stale>）
-```
+### 5.5 hook 安装
+首次使用执行 `/pmem init`，会引导用户把 hook 配置写入项目 `.zcode/config.json`（配置文件方式）或插件目录。详见 commands/pmem.md。
 
-## Quick Reference
+## 6. 别名归一（normalize before write）
 
-| Command | Purpose | Requests |
-|---------|---------|----------|
-| `/pmem` | Activate via state machine | 0 (continuation) / ~1 (first turn, via cat) |
-| `/pmem check` | Staleness report | 1 |
-| `/pmem verify` | Incremental repair, preserve drafts | varies |
-| `/pmem sync` | Full rebuild (overwrites) | varies |
+写入 knowledge-graph.json 前，必须将 LLM 常见的非规范值归一为规范值。完整别名表见 `references/graph-protocol.md` 第 7 节。常用：
 
-| Scenario | Action | Requests |
-|----------|--------|----------|
-| New window, first turn | Full load via cat | ~1 |
-| Same window, later turn | Nothing — already loaded | **0** |
-| User: "我pull了/更新了" | Read VERSION only | 1 |
-| Self-written archive this window | Nothing — already in context | **0** |
-| Answer "what does X affect?" | From in-context relationships | **0** |
+| 规范值 | 常见别名 |
+|---|---|
+| `one_to_many` | `one-to-many`, `OneToMany`, `1:N`, `has_many` |
+| `redundant_mirror` | `mirror`, `denormalized`, `redundant-mirror` |
+| `cascade_delete` | `cascade`, `on_delete_cascade` |
 
-## References
+**归档流程里必须执行这一步**，否则非规范值会污染图谱。
 
-- `references/retrieval-protocol.md` — hash strategy, fallback ladder, what-to-commit.
-- `references/templates/` — annotated templates (with anchor fields) for each knowledge file.
-- `references/update-checklist.md` — per-scenario update criteria + anchor maintenance.
+## 7. 指纹增量更新
+
+避免每次归档都全量重扫项目文件。`fingerprints.json` 记录每个文件的：
+- `contentHash`：SHA-256（判定 NONE）
+- `structKeys`：结构签名 { classes, fields, methods, imports }（判定 COSMETIC/STRUCTURAL）
+
+`/pmem sync` 时只重扫 hash 变化的文件；`/pmem verify` 时逐 node 对比 hash，失效的自愈。
+
+详见 `references/update-checklist.md`。
+
+## 8. redundant_mirror 冗余镜像（核心专项）
+
+处理"某字段冗余记录了另一条主关系"的场景。例如：
+
+> 工单表 `WsWorkOrder.repairPartIds`（逗号拼接的被试件id）冗余记录了中间表 `WsWorkOrderRepairPart` 的关系。
+
+**必须由两部分协同记录**（缺一不可）：
+
+1. **edges[] 一条 redundant_mirror 边**：建立拓扑可见性
+   - `type: "redundant_mirror"`, `via: "字段名(逗号拼接)"`, `mirrors: "主关系路径"`
+2. **rules[] 一条 sync 规则**：建立操作联动
+   - `trigger.edge: "主关系"`, `must_also_update: [{entity, field, action}]`
+
+**检测时机**：
+- `/pmem sync` 扫描：字段名含 Ids/List/集合 且为 String → 标记疑似，提示确认
+- HARD-GATE 归档：改中间表关系时检查关联实体是否有冗余字段
+
+**查询时**：1-hop 影响分析命中主关系或冗余实体 → 规则引擎自动返回 must_also_update 提醒。**不依赖 AI 读 description 文本**。
+
+## 9. 检索协议
+
+查询"改 X 影响谁"等影响分析时，按 `references/retrieval-protocol.md` 的 1-hop 邻居扩展算法执行：
+1. 找 node[id="entity:X"]
+2. 筛 edges where source==X OR target==X → 收集邻居
+3. 查 rules where trigger.edge 涉及 X 或邻居 → 列出 must_also_update
+4. 查 redundant_mirror 边 where source==X → 提醒同步冗余字段
+5. 返回完整影响范围
+
+## 10. 参考文档索引
+
+- `references/graph-protocol.md` — 图模型完整规范（节点/边/规则/契约字段、ID 命名空间、权重、别名表、redundant_mirror 机制）
+- `references/retrieval-protocol.md` — 检索协议（1-hop 算法 + 规则触发 + 冗余镜像提醒 + 退化阶梯）
+- `references/update-checklist.md` — 归档检查清单（触发条件 + 维护规则 + redundant_mirror 检测 + 别名归一 + 指纹更新）
+- `references/templates/knowledge-graph.json` — 图谱模板（含示例 node/edge/rule/contract）
+- `references/templates/fingerprints.json` — 指纹库模板
+- `references/templates/hooks/config.json.example` — hook 配置示例
+- `hooks/*.mjs` — 自动归档 hook 脚本（fingerprint/post-tool-archive/stop-archive/session-load）
