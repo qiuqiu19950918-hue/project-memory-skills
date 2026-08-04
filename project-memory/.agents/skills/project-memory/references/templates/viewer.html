@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>pmem 知识图谱可视化原型</title>
+<!-- vis-network CDN（standalone UMD 构建，暴露全局 vis） -->
+<script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; }
+  body { font-family: system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; }
+  #app { display: flex; flex-direction: column; height: 100vh; }
+  #header {
+    padding: 10px 16px;
+    border-bottom: 1px solid #d1d5db;
+    background: #ffffff;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  #header h1 { font-size: 16px; margin: 0; color: #1f2937; }
+  #fileBtn {
+    padding: 6px 14px;
+    border: 1px solid #2563eb;
+    background: #2563eb;
+    color: #fff;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+  }
+  #fileBtn:hover { background: #1d4ed8; }
+  #status { font-size: 13px; color: #6b7280; }
+  #stats { font-size: 13px; color: #2563eb; font-weight: 600; }
+  #canvas {
+    flex: 1;
+    min-height: 600px;
+    position: relative;
+    background: #f8fafc;
+  }
+  /* 右上角悬浮图例 */
+  #legend {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    z-index: 10;
+    background: rgba(255, 255, 255, 0.95);
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 12px;
+    line-height: 1.8;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    max-width: 240px;
+  }
+  #legend h3 { margin: 0 0 6px; font-size: 12px; color: #374151; }
+  .legend-item { display: flex; align-items: center; gap: 8px; }
+  .legend-line { display: inline-block; min-width: 46px; height: 0; border-top: 3px solid; margin-right: 6px; }
+  .legend-line.dashed { border-top-style: dashed; }
+  /* 左下角悬浮规则面板（与右上角图例风格对称） */
+  #rulesPanel {
+    position: absolute;
+    bottom: 12px;
+    left: 12px;
+    z-index: 10;
+    max-width: 300px;
+  }
+  #rulesToggle {
+    display: inline-block;
+    padding: 6px 12px;
+    border: 1px solid #d1d5db;
+    background: rgba(255, 255, 255, 0.95);
+    color: #374151;
+    border-radius: 8px;
+    font-size: 12px;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  }
+  #rulesToggle:hover { background: #f3f4f6; }
+  #rulesList {
+    margin-top: 6px;
+    background: rgba(255, 255, 255, 0.95);
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    padding: 8px 10px;
+    font-size: 12px;
+    line-height: 1.6;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    max-height: 320px;
+    overflow-y: auto;
+  }
+  .rule-empty { color: #6b7280; padding: 2px 0; }
+  .rule-item { cursor: pointer; padding: 4px 6px; border-radius: 6px; }
+  .rule-item:hover { background: #f3f4f6; }
+  .rule-item.active { background: #eff6ff; }
+  .rule-title { font-weight: 600; color: #1f2937; font-family: monospace; font-size: 12px; }
+  .rule-summary { color: #4b5563; font-size: 11px; }
+  /* 展开的规则详情：更小字号、缩进、灰色辅助色 */
+  .rule-detail {
+    margin-top: 4px;
+    padding: 6px 8px;
+    border-left: 3px solid #2563eb;
+    background: #f9fafb;
+    border-radius: 4px;
+    font-size: 11px;
+    color: #6b7280;
+  }
+  .rd-row { margin: 2px 0; word-break: break-all; }
+  .rd-label { color: #9ca3af; font-family: monospace; font-size: 10px; margin-right: 4px; }
+  .rd-value { color: #374151; }
+  .rd-mu { margin: 2px 0 2px 10px; color: #4b5563; }
+  .rd-action { color: #2563eb; font-weight: 600; }
+  .rd-constraint { margin: 2px 0 2px 10px; color: #4b5563; }
+  .rd-warn { color: #f59e0b; }
+  .rd-reason { margin-top: 4px; color: #9ca3af; font-size: 10px; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="header">
+    <h1>pmem 知识图谱可视化原型</h1>
+    <button id="fileBtn">选择 knowledge-graph.json 文件</button>
+    <input id="fileInput" type="file" accept=".json" style="display:none">
+    <span id="status">尚未加载文件</span>
+    <span id="stats"></span>
+  </div>
+  <div id="canvas">
+    <div id="legend">
+      <h3>图例（边的类型与颜色）</h3>
+      <div class="legend-item"><span class="legend-line" style="border-color:#6B7280"></span>one_to_many / one_to_one / many_to_many</div>
+      <div class="legend-item"><span class="legend-line dashed" style="border-color:#EF4444"></span>redundant_mirror（冗余镜像，红虚线）</div>
+      <div class="legend-item"><span class="legend-line" style="border-color:#F59E0B"></span>cascade_delete（级联删除）</div>
+      <div class="legend-item"><span class="legend-line dashed" style="border-color:#6B7280"></span>implicit（隐式关系）</div>
+      <div class="legend-item"><span class="legend-line" style="border-color:#3B82F6"></span>depends_on（依赖）</div>
+      <div class="legend-item"><span class="legend-line" style="border-color:#000000"></span>其他类型</div>
+    </div>
+    <div id="rulesPanel">
+      <button id="rulesToggle" type="button">📋 规则 (0)</button>
+      <div id="rulesList" style="display:none"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  var fileInput = document.getElementById('fileInput');
+  var fileBtn = document.getElementById('fileBtn');
+  var statusEl = document.getElementById('status');
+  var statsEl = document.getElementById('stats');
+  var canvasEl = document.getElementById('canvas');
+  var network = null;
+  // 当前图中已定义节点 id 集合，用于规则高亮时过滤不存在的节点
+  var graphNodeIds = {};
+  // 规则面板状态
+  var rulesOpen = false;
+  var activeRuleId = null;
+
+  // 按 layer 上色
+  var LAYER_COLOR = {
+    data: '#60A5FA',
+    model: '#34D399',
+    service: '#FBBF24',
+    controller: '#A78BFA'
+  };
+  var DEFAULT_NODE_COLOR = '#9CA3AF';
+
+  // 按边类型上色 / 线型
+  var EDGE_STYLE = {
+    one_to_many:      { color: '#6B7280', dashes: false },
+    many_to_one:      { color: '#6B7280', dashes: false },
+    one_to_one:       { color: '#6B7280', dashes: false },
+    many_to_many:     { color: '#6B7280', dashes: false },
+    redundant_mirror: { color: '#EF4444', dashes: true },   // 红色虚线，重点突出
+    cascade_delete:   { color: '#F59E0B', dashes: false },
+    implicit:         { color: '#6B7280', dashes: true },
+    depends_on:       { color: '#3B82F6', dashes: false }
+  };
+  var DEFAULT_EDGE_STYLE = { color: '#000000', dashes: false };
+
+  function escapeHtml(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  // ---------- pmem 格式 → vis-network 格式 ----------
+  function pmemToVis(data) {
+    var nodes = [];
+    var edges = [];
+    var i, n;
+
+    // 节点转换
+    for (i = 0; i < (data.nodes || []).length; i++) {
+      n = data.nodes[i];
+      if (!n || typeof n.id !== 'string' || n.id === '') continue;
+      var layer = n.layer || '';
+      nodes.push({
+        id: n.id,
+        label: n.name || n.id,
+        shape: 'box',
+        color: { background: LAYER_COLOR[layer] || DEFAULT_NODE_COLOR, border: '#1f2937' },
+        font: { color: '#1f2937', face: 'monospace', size: 14 },
+        title:
+          '<div style="font-weight:bold">' + escapeHtml(n.name || n.id) + '</div>' +
+          '<div>id: ' + escapeHtml(n.id) + '</div>' +
+          '<div>type: ' + escapeHtml(n.type || '-') + '</div>' +
+          '<div>layer: ' + escapeHtml(n.layer || '-') + '</div>' +
+          '<div>summary: ' + escapeHtml(n.summary || '-') + '</div>' +
+          '<div>fields: ' + ((n.fields && n.fields.length) || 0) + ' 个</div>'
+      });
+    }
+
+    // 边转换
+    for (i = 0; i < (data.edges || []).length; i++) {
+      n = data.edges[i];
+      if (!n || !n.source || !n.target) continue;
+      var style = EDGE_STYLE[n.type] || DEFAULT_EDGE_STYLE;
+      edges.push({
+        from: n.source,
+        to: n.target,
+        label: n.type || '',
+        arrows: 'to',
+        color: { color: style.color, highlight: style.color },
+        dashes: style.dashes,
+        width: 1.5,
+        font: { size: 11, align: 'middle' }
+      });
+    }
+
+    // 容错：为只出现在 edges 中、但 nodes 里未定义的端点补占位节点，
+    // 否则 vis-network 无法绘制这些边（模板样例引用了未定义节点）。
+    var defined = {};
+    for (i = 0; i < nodes.length; i++) defined[nodes[i].id] = true;
+    var missing = {};
+    for (i = 0; i < edges.length; i++) {
+      if (!defined[edges[i].from]) missing[edges[i].from] = true;
+      if (!defined[edges[i].to]) missing[edges[i].to] = true;
+    }
+    Object.keys(missing).forEach(function (id) {
+      nodes.push({
+        id: id,
+        label: id.replace(/^entity:/, ''),
+        shape: 'box',
+        color: { background: DEFAULT_NODE_COLOR, border: '#1f2937' },
+        font: { color: '#1f2937', face: 'monospace', size: 14 },
+        title: '<div style="font-weight:bold">' + escapeHtml(id) + '</div>' +
+               '<div>（仅被边引用，nodes 中未定义）</div>'
+      });
+    });
+
+    return { nodes: nodes, edges: edges };
+  }
+
+  // ---------- 渲染 ----------
+  function render(data) {
+    var converted = pmemToVis(data);
+
+    // 记录图中真实存在的节点 id，供规则高亮过滤使用
+    graphNodeIds = {};
+    converted.nodes.forEach(function (n) { graphNodeIds[n.id] = true; });
+
+    var container = document.getElementById('network');
+    if (container) container.remove();
+    container = document.createElement('div');
+    container.id = 'network';
+    container.style.cssText = 'position:absolute; top:0; left:0; right:0; bottom:0;';
+    canvasEl.appendChild(container);
+
+    // 检查 CDN 是否加载成功
+    if (typeof vis === 'undefined' || typeof vis.Network !== 'function') {
+      alert('vis-network 库加载失败，请检查网络后刷新页面');
+      return;
+    }
+
+    var nodesDS = new vis.DataSet(converted.nodes);
+    var edgesDS = new vis.DataSet(converted.edges);
+    var options = {
+      nodes: { shape: 'box' },
+      edges: { smooth: { enabled: true, type: 'dynamic' } },
+      physics: { enabled: true, stabilization: { iterations: 300 } },
+      interaction: { hover: true, tooltipDelay: 100 },
+      layout: { improvedLayout: true }
+    };
+    network = new vis.Network(container, { nodes: nodesDS, edges: edgesDS }, options);
+
+    var ruleCount = (data.rules && data.rules.length) || 0;
+    statsEl.textContent = '已加载：' + data.nodes.length + ' 个节点 / ' + data.edges.length + ' 条边 / ' + ruleCount + ' 条规则';
+    statusEl.textContent = '渲染完成，可拖拽 / 缩放 / 悬停查看详情';
+
+    renderRules(data.rules);
+  }
+
+  // ---------- 规则面板 ----------
+  // 解析 trigger.edge 字符串 "entity:A→entity:B" → ["entity:A", "entity:B"]
+  function parseTriggerEdge(edgeStr) {
+    if (typeof edgeStr !== 'string' || edgeStr === '') return [];
+    return edgeStr.split('→')
+      .map(function (s) { return s.trim(); })
+      .filter(Boolean);
+  }
+
+  // 渲染左下角规则列表（折叠/展开状态由 rulesOpen 控制）
+  function renderRules(rules) {
+    var list = document.getElementById('rulesList');
+    var count = (rules && rules.length) || 0;
+    document.getElementById('rulesToggle').textContent = '📋 规则 (' + count + ')';
+    list.innerHTML = '';
+    activeRuleId = null;
+    if (!count) {
+      list.innerHTML = '<div class="rule-empty">暂无规则</div>';
+      return;
+    }
+    for (var i = 0; i < rules.length; i++) {
+      var r = rules[i] || {};
+      var item = document.createElement('div');
+      item.className = 'rule-item';
+      item.innerHTML =
+        '<div class="rule-title">' + escapeHtml(String(r.id || '').replace(/^rule:/, '')) + '</div>' +
+        '<div class="rule-summary">' + escapeHtml(r.summary || '') + '</div>';
+      item.addEventListener('click', makeRuleClickHandler(r, item));
+      list.appendChild(item);
+    }
+  }
+
+  function makeRuleClickHandler(rule, item) {
+    return function () { toggleRuleDetail(rule, item); };
+  }
+
+  // 点击规则项：展开详情 + 高亮图中相关节点/边；再次点击收起并取消高亮
+  function toggleRuleDetail(rule, item) {
+    var detail = item.querySelector('.rule-detail');
+    if (detail) {
+      detail.remove();
+      item.classList.remove('active');
+      activeRuleId = null;
+      if (network) network.unselectAll();
+      return;
+    }
+    // 收起其他已展开的规则项
+    var actives = document.querySelectorAll('#rulesList .rule-item.active');
+    for (var i = 0; i < actives.length; i++) {
+      var d = actives[i].querySelector('.rule-detail');
+      if (d) d.remove();
+      actives[i].classList.remove('active');
+    }
+    if (network) network.unselectAll();
+    var box = document.createElement('div');
+    box.className = 'rule-detail';
+    box.innerHTML = buildRuleDetailHtml(rule);
+    item.appendChild(box);
+    item.classList.add('active');
+    activeRuleId = rule.id || null;
+    highlightRule(rule);
+  }
+
+  function buildRuleDetailHtml(rule) {
+    var html = '';
+    var t = rule.trigger || {};
+    html += '<div class="rd-row"><span class="rd-label">trigger.edge</span><span class="rd-value">' +
+      escapeHtml(t.edge || '-') + '</span></div>';
+    html += '<div class="rd-row"><span class="rd-label">operations</span><span class="rd-value">' +
+      escapeHtml((t.operations || []).join(', ')) + '</span></div>';
+    var mu = rule.must_also_update || [];
+    if (mu.length) {
+      html += '<div class="rd-row"><span class="rd-label">must_also_update</span></div>';
+      for (var i = 0; i < mu.length; i++) {
+        var m = mu[i] || {};
+        html += '<div class="rd-mu">' + escapeHtml(m.entity) + '.' + escapeHtml(m.field) +
+          ' → <span class="rd-action">' + escapeHtml(m.action || '') + '</span></div>';
+      }
+    }
+    var cons = rule.constraints || [];
+    for (var j = 0; j < cons.length; j++) {
+      html += '<div class="rd-constraint"><span class="rd-warn">⚠️</span> ' + escapeHtml(cons[j]) + '</div>';
+    }
+    if (rule.reason) {
+      html += '<div class="rd-reason">' + escapeHtml(rule.reason) + '</div>';
+    }
+    return html;
+  }
+
+  // 高亮规则相关节点/边：选中 trigger 两端节点（关联边自动高亮），并聚焦相机
+  function highlightRule(rule) {
+    if (!network) return;
+    var triggerIds = parseTriggerEdge(rule.trigger && rule.trigger.edge);
+    var mustIds = (rule.must_also_update || [])
+      .map(function (m) { return m && m.entity; })
+      .filter(Boolean);
+    // 合并 trigger 端点 + must_also_update 实体，去重并过滤图中不存在的节点
+    var seen = {};
+    var selectable = [];
+    triggerIds.concat(mustIds).forEach(function (id) {
+      if (id && !seen[id] && graphNodeIds[id]) { seen[id] = true; selectable.push(id); }
+    });
+    if (!selectable.length) return;
+    // selectNodes(ids, highlightEdges=true)：选中节点并自动高亮关联边，其余边变淡
+    network.selectNodes(selectable, true);
+    // 相机聚焦相关区域（优先 trigger 端点）
+    network.focus(selectable[0], {
+      scale: 1.0,
+      animation: { duration: 400, easingFunction: 'easeInOutQuad' }
+    });
+  }
+
+  // 规则面板折叠/展开
+  document.getElementById('rulesToggle').addEventListener('click', function () {
+    rulesOpen = !rulesOpen;
+    var list = document.getElementById('rulesList');
+    list.style.display = rulesOpen ? 'block' : 'none';
+    if (!rulesOpen && network) network.unselectAll();
+  });
+
+  // ---------- 文件读取 ----------
+  function handleFile(file) {
+    statusEl.textContent = '正在读取文件…';
+    statsEl.textContent = '';
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function (e) {
+      var text = String(e.target.result || '');
+      var data;
+      try {
+        data = JSON.parse(text);
+      } catch (err) {
+        alert('文件格式错误：不是合法的 JSON（' + err.message + '）');
+        statusEl.textContent = '文件格式错误，请选择合法的 JSON 文件';
+        return;
+      }
+      // 结构校验：必须含 nodes / edges 数组
+      if (!data || typeof data !== 'object' ||
+          !Array.isArray(data.nodes) || !Array.isArray(data.edges)) {
+        alert('不是有效的 pmem 知识图谱文件（缺少 nodes / edges 数组）');
+        statusEl.textContent = '不是有效的 pmem 知识图谱文件';
+        return;
+      }
+      render(data);
+    };
+    reader.onerror = function () {
+      alert('文件读取失败，请重试');
+      statusEl.textContent = '文件读取失败';
+    };
+    reader.readAsText(file, 'utf-8');
+  }
+
+  fileBtn.addEventListener('click', function () { fileInput.click(); });
+  fileInput.addEventListener('change', function () {
+    handleFile(fileInput.files && fileInput.files[0]);
+    fileInput.value = '';
+  });
+})();
+</script>
+</body>
+</html>

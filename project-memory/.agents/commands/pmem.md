@@ -107,6 +107,37 @@ description: 管理 Project Memory 代码知识图谱。初始化、迁移、同
 2. 按 retrieval-protocol.md 的 1-hop 算法查询
 3. 返回影响范围 + 规则联动 + 冗余镜像提醒
 
+## /pmem view
+
+用浏览器可视化查看知识图谱。打开一个本地 HTML 页面，选择 knowledge-graph.json 文件即可看到交互式图谱。
+
+执行步骤：
+1. 定位 viewer.html 路径：
+   - 全局安装：~/.agents/skills/project-memory/references/templates/viewer.html
+   - 项目级：<项目>/.agents/skills/project-memory/references/templates/viewer.html
+2. 用默认浏览器打开 viewer.html：
+   - Windows：`start "" "<viewer.html 绝对路径>"`
+   - macOS：`open "<路径>"`
+   - Linux：`xdg-open "<路径>"`
+3. 页面打开后提示用户：
+   - 点击页面"选择 knowledge-graph.json 文件"按钮
+   - 选择项目的 `.zcode_skills_temp/.aiknowledge/knowledge-graph.json`
+   - 图谱自动渲染
+
+功能说明（告诉用户能做什么）：
+- 力导向布局：节点自动散开，可拖拽、滚轮缩放
+- 节点按 layer 上色：data(蓝)/model(绿)/service(橙)/controller(紫)
+- 边按类型区分：标准关系(灰实线)、redundant_mirror(红虚线，重点)、cascade_delete(橙)、implicit(灰虚线)、depends_on(蓝)
+- 悬停节点显示详情（type/summary/fields 数量）
+- 右上角图例说明各边类型
+- 顶部显示统计：N 节点 / M 边 / K 规则
+- **左下角规则面板**：点击"📋 规则 (N)"展开，列出所有规则；点击某条规则可看详情（trigger/must_also_update/constraints）并自动高亮图里相关节点，无关节点淡化
+
+注意事项：
+- 首次打开需联网加载 vis-network CDN（约 50KB，几秒），之后浏览器缓存可离线用
+- 纯前端读取，文件不上传任何服务器，本地安全
+- 若 knowledge-graph.json 不存在，提示先执行 /pmem init 或 /pmem migrate
+
 ## /pmem graph
 
 输出知识图谱统计概览。

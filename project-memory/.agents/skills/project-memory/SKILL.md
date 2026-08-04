@@ -1,6 +1,6 @@
 ---
 name: project-memory
-description: 项目代码知识图谱记忆系统。将实体/关系/规则/API契约存储为单一 JSON 知识图谱，支持 1-hop 影响分析、冗余镜像（redundant_mirror）检测、hook 驱动的自动归档。使用 /pmem 命令管理。
+description: 项目代码知识图谱记忆系统。将实体/关系/规则/API契约存储为单一 JSON 知识图谱，支持 1-hop 影响分析、冗余镜像（redundant_mirror）检测、hook 驱动的自动归档、浏览器可视化查看（/pmem view）。使用 /pmem 命令管理。
 ---
 
 # Project Memory · 代码知识图谱
@@ -195,4 +195,5 @@ AI 准备结束回复时：
 - `references/templates/knowledge-graph.json` — 图谱模板（含示例 node/edge/rule/contract）
 - `references/templates/fingerprints.json` — 指纹库模板
 - `references/templates/hooks/config.json.example` — hook 配置示例
+- `references/templates/viewer.html` — 可视化查看器（浏览器打开，选 JSON 即看图；含左下角规则面板，点击规则高亮相关节点，详见 /pmem view）
 - `hooks/*.mjs` — 自动归档 hook 脚本（fingerprint/post-tool-archive/stop-archive/session-load）
