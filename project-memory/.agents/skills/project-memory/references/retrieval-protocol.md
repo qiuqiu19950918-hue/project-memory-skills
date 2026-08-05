@@ -107,7 +107,78 @@ Level 3（兜底）: anchor 失效 → 全局搜索代码（grep/glob），重�
 返回 score > 0 的 node，按 score 降序。
 ```
 
-## 7. 检索结果输出格式
+## 7. API 反查协议（URL → 后台接口）
+
+根据前端请求 URL 快速定位后台接口，无需 grep 项目代码。
+
+触发场景：用户给出 URL 如 `GET /api/workorders/123/parts`，问"这是哪个接口/哪个 Controller 方法"。
+
+检索步骤：
+1. 从 URL 提取 HTTP 方法 + 路径：`GET /api/workorders/123/parts`
+2. 遍历 knowledge-graph.json 的 contracts[] 做**参数化匹配**：
+   - 把 URL 路径的每一段与 contract.path 的路径段逐段对比
+   - contract.path 中以 `:` 开头的段（如 `:id`）视为**参数通配符**，匹配 URL 中对应位置的任意非空段
+   - HTTP 方法也必须匹配（GET/POST/PUT/DELETE）
+3. 命中 contract 后返回完整信息：
+   - contract.path（原始参数化路径）
+   - contract.summary（功能说明，理解接口做什么）
+   - contract.format（nested/flat/hybrid，前端需注意的响应格式）
+   - contract.special_handling（前端特殊处理点）
+   - contract.anchor.symbol + contract.anchor.file（后台代码定位）
+4. 若未命中：告知用户"该 URL 未在知识图谱中记录"，建议 /pmem sync 或提醒归档
+
+示例：
+```
+输入：GET /api/workorders/123/parts
+contracts[] 中 "path": "GET /api/workorders/:id/parts"
+逐段匹配：GET==GET, api==api, workorders==workorders, 123 matches :id, parts==parts
+命中 contract:get_workorder_parts
+返回：WsWorkOrderController.java, getWorkOrderWithParts
+```
+
+## 8. 合约搜索协议（新需求 → 接口复用分析）
+
+根据业务需求描述，查找是否已有接口实现了类似逻辑，支持接口复用决策。
+
+触发场景：用户说"新需求是 XXX，有没有现成接口可以复用"。
+
+检索步骤：
+1. **解析需求语义**：从需求描述中提取核心实体和操作
+   - 例："根据被试件状态筛选工单列表"→ 实体: 工单 + 被试件，操作: 筛选/查询
+2. **定位关联实体节点**：在 knowledge-graph.json 的 nodes[] 中找到对应实体
+   - 找到 entity:WsWorkOrder、entity:ReRepairPart
+3. **沿 contract↔entity 边查合约**（若有边连接）：
+   - 找 edges where type 为 serves/queries 且 target 为上述 entity
+   - 通过这些 edges 快速确定"哪些合约涉及这些实体"
+   - 若 contract↔entity 边缺失，退化到步骤 4
+4. **退化扫描全部 contracts[]**（无 contract↔entity 边时）：
+   - 在 contracts[].summary 和 contracts[].path 中做文本匹配
+   - 用搜索协议（第 6 节）的加权方案：path 匹配权重 0.4，summary 匹配权重 0.3
+   - 提取匹配的候选 contract
+   - ⚠️ 当前 knowledge-graph.json 中 contracts 和 entities 之间**可能没有边连接**（取决于归档时是否记录了 contract→entity 的边）
+5. **语义对比**：将需求描述与候选 contract 的 summary + special_handling 进行语义对比
+   - 判断是否可直接复用、需要包装调用、还是必须新增
+6. **返回复用建议**：
+   - 候选 contract 列表（path + summary + 相似度评估）
+   - 推荐动作（复用/包装/新增）及理由
+   - 每个候选的 anchor（定位到后台代码）
+
+示例：
+```
+输入："需要一个新接口，根据被试件状态筛选工单列表"
+Step 2: entities → entity:WsWorkOrder, entity:ReRepairPart
+Step 4: 扫描 contracts[] → 候选: contract:get_workorder_parts（summary 含"被试件"、path 含 "workorders"）
+Step 5: 语义对比 → get_workorder_parts 已实现"某工单的被试件列表"，新需求是"按被试件状态查工单"
+        → 不完全等价，但 getWorkOrderWithParts 方法的底层逻辑可复用
+Step 6: 建议"包装复用"——新建接口外层加状态筛选，内层调用已有方法
+```
+
+> 注意：
+> - 本协议依赖 contracts[].summary 字段质量——归档时务必写清楚"做什么"而非"怎么实现"
+> - 若 contracts 和 entities 之间没有边连接，协议自动退化到文本扫描（步骤 4）
+> - 搜索协议（第 6 节）的加权匹配方法同样适用于 contracts[].summary 的匹配
+
+## 9. 检索结果输出格式
 
 ```
 📍 影响分析：改 <X> 的影响范围

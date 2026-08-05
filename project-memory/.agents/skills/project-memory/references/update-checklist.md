@@ -19,6 +19,8 @@
 | 发现冗余字段 | edges[] 加 redundant_mirror 边 + rules[] 加 sync 规则 |
 | 新增非标准 API | contracts[] 加 contract（若格式偏离标准 CRUD）|
 | 修改中间表关系 | 检查是否有 redundant_mirror 联动 → 触发 sync 规则 |
+| 新增对外 API 接口 | contracts[] 加 contract（必须填 path + summary + format + anchor.symbol）并加 entity→contract 边（serves/queries）|
+| 修改已有接口逻辑 | 更新 contract.summary（若业务逻辑变化），检查 entity→contract 边是否需要调整 |
 
 ### 不记录（Do NOT Record）
 
@@ -28,6 +30,12 @@
 - 注释、文档、日志语句更新
 - 单元测试代码（除非测试揭示了新规则）
 - 配置文件值调整（除非改变实体结构）
+
+### contract 归档提醒
+- contracts[].path 必须使用参数化路径（如 `GET /api/workorders/:id/parts`），**禁止**写具体值（如 `/api/workorders/123/parts`）。参数用 `:paramName` 命名。
+- contracts[].summary 须描述"接口做什么"（业务语义），而非"怎么实现"（技术细节）
+- 新增接口时须同时加 entity→contract 的边（type=serves 或 queries），使合约搜索协议可走图遍历而非退化文本扫描
+- 修改接口逻辑后更新 contract.summary 和 anchor.hash
 
 ## 2. node 维护规范
 

@@ -22,8 +22,10 @@ knowledge-graph.json 顶层字段：
 | summary | string | ✅ | 一句话描述 |
 | tags | string[] | ➖ | 域标签，用于分组过滤（如 `工单域`）|
 | layer | string | ➖ | 架构层（`data`/`model`/`service`/`controller`）|
-| anchor | object | ✅ | 代码定位 { file, symbol, lines, hash } |
+| anchor | object | ✅ | 代码定位 { file, symbol, lines?, hash }。symbol 为稳定主键（类名/方法名），lines 为可选辅助定位 |
 | fields | object[] | ➖ | 字段定义 { name, type, primary?, unique?, ref?, comment? } |
+
+> **anchor 定位规则**：检索时优先用 symbol（稳定索引，不受代码增删行影响）定位代码；lines 仅作辅助快速滚动。归档时 symbol 必填，lines 可选填。若只记录 symbol 不含 lines，在"API 反查"或"合约搜索"中仍可精确定位到方法级别。
 
 节点 type 取值：`table`（数据库表）、`service`（服务类）、`controller`（控制器）、`config`（配置）、`document`（文档）。
 
@@ -53,6 +55,8 @@ knowledge-graph.json 顶层字段：
 | **冗余镜像** | **`redundant_mirror`** | **0.3** | **冗余字段镜像主关系，必须配 sync 规则** |
 | 级联 | `cascade_delete` | 0.9 | 删父级自动删子级 |
 | 依赖 | `depends_on` | 0.6 | 跨模块隐式依赖 |
+| 契约 | `serves` | 0.5 | 合约提供对实体的服务（contract→entity） |
+| 契约 | `queries` | 0.5 | 合约查询的实体（contract→entity） |
 
 ## 4. 规则（rule）规范
 
